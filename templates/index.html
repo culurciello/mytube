@@ -204,6 +204,13 @@
             padding: 0 2px;
         }
 
+        .result-reason {
+            font-size: 12px;
+            color: #888;
+            margin-top: 6px;
+            font-style: italic;
+        }
+
         .no-results {
             text-align: center;
             padding: 40px;
@@ -253,7 +260,7 @@
         <div class="search-section" id="searchSection">
             <h2>Search Transcript</h2>
             <div class="input-group">
-                <input type="text" id="queryInput" placeholder="Search for a topic in the video...">
+                <input type="text" id="queryInput" placeholder="Ask anything about the video (powered by Claude)...">
                 <button id="searchBtn" onclick="searchTranscript()">Search</button>
             </div>
             <div id="resultsContainer"></div>
@@ -338,10 +345,17 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ video_id: currentVideoId, query }),
                 });
-                const data = await resp.json();
+                const text = await resp.text();
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch {
+                    showStatus('Server returned invalid response', 'error');
+                    return;
+                }
 
                 if (!resp.ok) {
-                    showStatus(data.error, 'error');
+                    showStatus(data.error || 'Search failed', 'error');
                     return;
                 }
 
@@ -349,7 +363,7 @@
                 renderResults(data.results, query);
 
             } catch (err) {
-                showStatus('Network error: ' + err.message, 'error');
+                showStatus('Search error: ' + err.message, 'error');
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Search';
@@ -384,8 +398,9 @@
                             <div class="time-badge">${r.time}</div>
                         </div>
                         <div class="result-body">
-                            <div class="result-rank">#${i + 1} Match &middot; Score: ${r.score}</div>
+                            <div class="result-rank">#${i + 1} Match &middot; Relevance: ${r.score}/10</div>
                             <div class="result-text">${highlightText(r.text, query)}</div>
+                            ${r.reason ? `<div class="result-reason">${r.reason}</div>` : ''}
                         </div>
                     </a>
                 `;

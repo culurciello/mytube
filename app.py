@@ -1,7 +1,8 @@
 from flask import Flask, render_template, request, jsonify, session
 from youtube_transcript_api import YouTubeTranscriptApi
+import anthropic
+import json
 import re
-import math
 
 app = Flask(__name__)
 app.secret_key = "mytube-secret-key"
@@ -34,7 +35,7 @@ def fetch_transcript(video_id):
     transcript_data = YouTubeTranscriptApi().fetch(video_id)
 
     segments = []
-    current_segment = {"start": 0, "text": "", "entries": []}
+    current_segment = {"start": 0, "text": ""}
     segment_duration = 30  # seconds per segment
 
     for entry in transcript_data.snippets:
@@ -43,11 +44,10 @@ def fetch_transcript(video_id):
 
         if expected_start != current_segment["start"] and current_segment["text"]:
             segments.append(current_segment)
-            current_segment = {"start": expected_start, "text": "", "entries": []}
+            current_segment = {"start": expected_start, "text": ""}
 
         current_segment["start"] = expected_start
         current_segment["text"] += " " + entry.text
-        current_segment["entries"].append(entry)
 
     if current_segment["text"]:
         segments.append(current_segment)
@@ -65,27 +65,57 @@ def format_time(seconds):
     return f"{m}:{s:02d}"
 
 
+claude_client = anthropic.Anthropic()
+
+
 def search_segments(segments, query, top_n=5):
-    """Rank segments by simple TF-based relevance to the query."""
-    query_terms = query.lower().split()
-    scored = []
-
+    """Use Claude to semantically rank transcript segments against a query."""
+    # Build a numbered list of segments for Claude
+    segment_list = ""
     for i, seg in enumerate(segments):
-        text_lower = seg["text"].lower()
-        score = 0
-        for term in query_terms:
-            score += text_lower.count(term)
-        if score > 0:
-            scored.append({
-                "index": i,
-                "start": seg["start"],
-                "time": format_time(seg["start"]),
-                "text": seg["text"],
-                "score": score,
-            })
+        segment_list += f"[{i}] ({format_time(seg['start'])}) {seg['text']}\n\n"
 
-    scored.sort(key=lambda x: x["score"], reverse=True)
-    return scored[:top_n]
+    response = claude_client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=1024,
+        messages=[{
+            "role": "user",
+            "content": (
+                f"Here are numbered transcript segments from a video:\n\n"
+                f"{segment_list}\n"
+                f"User query: \"{query}\"\n\n"
+                f"Return the top {top_n} segments most semantically relevant to the query. "
+                f"For each, give a relevance score from 1-10 and a short reason.\n\n"
+                f"Reply ONLY with valid JSON — no markdown, no extra text:\n"
+                f'{{"results": [{{"index": 0, "score": 8, "reason": "..."}}]}}'
+            ),
+        }],
+    )
+
+    raw = response.content[0].text.strip()
+    # Strip markdown code fences if present
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+    parsed = json.loads(raw)
+
+    results = []
+    for item in parsed["results"][:top_n]:
+        idx = item["index"]
+        if idx < 0 or idx >= len(segments):
+            continue
+        seg = segments[idx]
+        results.append({
+            "index": idx,
+            "start": seg["start"],
+            "time": format_time(seg["start"]),
+            "text": seg["text"],
+            "score": item["score"],
+            "reason": item.get("reason", ""),
+        })
+
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results
 
 
 @app.route("/")
@@ -138,7 +168,10 @@ def search():
         return jsonify({"error": "Enter a search query"}), 400
 
     segments = videos_store[video_id]["segments"]
-    results = search_segments(segments, query)
+    try:
+        results = search_segments(segments, query)
+    except Exception as e:
+        return jsonify({"error": f"Search failed: {str(e)}"}), 500
 
     if not results:
         return jsonify({"results": [], "message": "No matches found"})
