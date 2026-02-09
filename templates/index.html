@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MyTube - Video Transcript Search</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f0f;
+            color: #f1f1f1;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: #1a1a1a;
+            padding: 16px 24px;
+            border-bottom: 1px solid #333;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            color: #ff4444;
+            letter-spacing: -0.5px;
+        }
+
+        .logo span { color: #fff; }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 32px 24px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            background: #1a1a1a;
+            color: #f1f1f1;
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus {
+            border-color: #ff4444;
+        }
+
+        button {
+            padding: 12px 24px;
+            border-radius: 8px;
+            border: none;
+            background: #ff4444;
+            color: #fff;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+
+        button:hover { background: #cc0000; }
+        button:disabled { background: #555; cursor: not-allowed; }
+
+        .status {
+            padding: 10px 14px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .status.success { display: block; background: #1a3a1a; border: 1px solid #2d5a2d; color: #7ddf7d; }
+        .status.error { display: block; background: #3a1a1a; border: 1px solid #5a2d2d; color: #df7d7d; }
+
+        .video-preview {
+            display: none;
+            margin-bottom: 24px;
+            background: #1a1a1a;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #333;
+        }
+
+        .video-preview.active { display: block; }
+
+        .video-preview img {
+            width: 100%;
+            max-height: 300px;
+            object-fit: cover;
+        }
+
+        .video-preview .info {
+            padding: 16px;
+            font-size: 14px;
+            color: #aaa;
+        }
+
+        .search-section {
+            display: none;
+            margin-bottom: 24px;
+        }
+
+        .search-section.active { display: block; }
+
+        .search-section h2 {
+            font-size: 18px;
+            margin-bottom: 12px;
+            color: #ccc;
+        }
+
+        .results-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .result-card {
+            display: flex;
+            gap: 16px;
+            background: #1a1a1a;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #333;
+            transition: border-color 0.2s;
+            cursor: pointer;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .result-card:hover { border-color: #ff4444; }
+
+        .result-thumb {
+            position: relative;
+            flex-shrink: 0;
+            width: 200px;
+            height: 112px;
+        }
+
+        .result-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .time-badge {
+            position: absolute;
+            bottom: 6px;
+            right: 6px;
+            background: rgba(0,0,0,0.85);
+            color: #fff;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: monospace;
+        }
+
+        .result-body {
+            padding: 12px 16px 12px 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .result-rank {
+            font-size: 12px;
+            color: #ff4444;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .result-text {
+            font-size: 14px;
+            line-height: 1.5;
+            color: #ccc;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .result-text mark {
+            background: #ff444433;
+            color: #ff8888;
+            border-radius: 2px;
+            padding: 0 2px;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-size: 15px;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #fff;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @media (max-width: 600px) {
+            .result-card { flex-direction: column; }
+            .result-thumb { width: 100%; height: 180px; }
+            .result-body { padding: 12px 16px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">My<span>Tube</span></div>
+    </div>
+
+    <div class="container">
+        <div class="input-group">
+            <input type="text" id="urlInput" placeholder="Paste YouTube URL here...">
+            <button id="loadBtn" onclick="loadVideo()">Load Transcript</button>
+        </div>
+
+        <div class="status" id="status"></div>
+
+        <div class="video-preview" id="videoPreview">
+            <img id="previewThumb" src="" alt="Video thumbnail">
+            <div class="info" id="previewInfo"></div>
+        </div>
+
+        <div class="search-section" id="searchSection">
+            <h2>Search Transcript</h2>
+            <div class="input-group">
+                <input type="text" id="queryInput" placeholder="Search for a topic in the video...">
+                <button id="searchBtn" onclick="searchTranscript()">Search</button>
+            </div>
+            <div id="resultsContainer"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentVideoId = null;
+
+        document.getElementById('urlInput').addEventListener('keydown', e => {
+            if (e.key === 'Enter') loadVideo();
+        });
+        document.getElementById('queryInput').addEventListener('keydown', e => {
+            if (e.key === 'Enter') searchTranscript();
+        });
+
+        function showStatus(msg, type) {
+            const el = document.getElementById('status');
+            el.textContent = msg;
+            el.className = 'status ' + type;
+        }
+
+        function clearStatus() {
+            const el = document.getElementById('status');
+            el.className = 'status';
+        }
+
+        async function loadVideo() {
+            const url = document.getElementById('urlInput').value.trim();
+            if (!url) return;
+
+            const btn = document.getElementById('loadBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>Loading...';
+            clearStatus();
+
+            try {
+                const resp = await fetch('/load', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url }),
+                });
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    showStatus(data.error, 'error');
+                    return;
+                }
+
+                currentVideoId = data.video_id;
+                showStatus(data.message, 'success');
+
+                const preview = document.getElementById('videoPreview');
+                document.getElementById('previewThumb').src = data.thumbnail;
+                document.getElementById('previewInfo').textContent =
+                    `Video ID: ${data.video_id} | ${data.segment_count} transcript segments loaded`;
+                preview.classList.add('active');
+
+                document.getElementById('searchSection').classList.add('active');
+                document.getElementById('queryInput').focus();
+                document.getElementById('resultsContainer').innerHTML = '';
+
+            } catch (err) {
+                showStatus('Network error: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Load Transcript';
+            }
+        }
+
+        async function searchTranscript() {
+            const query = document.getElementById('queryInput').value.trim();
+            if (!query || !currentVideoId) return;
+
+            const btn = document.getElementById('searchBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>Searching...';
+
+            try {
+                const resp = await fetch('/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ video_id: currentVideoId, query }),
+                });
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    showStatus(data.error, 'error');
+                    return;
+                }
+
+                clearStatus();
+                renderResults(data.results, query);
+
+            } catch (err) {
+                showStatus('Network error: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Search';
+            }
+        }
+
+        function highlightText(text, query) {
+            const terms = query.toLowerCase().split(/\s+/);
+            let result = text;
+            terms.forEach(term => {
+                if (!term) return;
+                const regex = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                result = result.replace(regex, '<mark>$1</mark>');
+            });
+            return result;
+        }
+
+        function renderResults(results, query) {
+            const container = document.getElementById('resultsContainer');
+
+            if (!results.length) {
+                container.innerHTML = '<div class="no-results">No matching segments found. Try different keywords.</div>';
+                return;
+            }
+
+            const html = results.map((r, i) => {
+                const ytUrl = `https://www.youtube.com/watch?v=${r.video_id}&t=${Math.floor(r.start)}`;
+                return `
+                    <a class="result-card" href="${ytUrl}" target="_blank" rel="noopener">
+                        <div class="result-thumb">
+                            <img src="${r.thumbnail}" alt="Thumbnail">
+                            <div class="time-badge">${r.time}</div>
+                        </div>
+                        <div class="result-body">
+                            <div class="result-rank">#${i + 1} Match &middot; Score: ${r.score}</div>
+                            <div class="result-text">${highlightText(r.text, query)}</div>
+                        </div>
+                    </a>
+                `;
+            }).join('');
+
+            container.innerHTML = '<div class="results-list">' + html + '</div>';
+        }
+    </script>
+</body>
+</html>
